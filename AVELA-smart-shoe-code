@@ -1,0 +1,247 @@
+//------------COMMUNICATION PROTOCOLS----------//
+
+
+// Load the Wire library, which will give us
+// commands to interface with I2C
+// communication protocol:
+
+
+// Load the SPI library, which will give us
+// commands to interface with the SPI
+// communication protocol:
+#include <SPI.h>
+#include <math.h>
+
+
+// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
+// is used in I2Cdev.h
+#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+  #include "Wire.h"
+#endif
+
+
+//----------------SENSOR LIBRARIES--------------//
+
+
+// Load the BME280 library, which will give us
+// commands to interface to the BME280 sensor:
+#include "SparkFunBME280.h"
+BME280 mySensor;
+// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
+// for both classes must be in the include path of your project
+//#include "I2Cdev.h"
+#include "MPU6050.h"
+
+
+// Load the SD library, which will give us
+// commands to interface to the SD card:
+#include <SD.h>
+
+
+// class default I2C address is 0x68
+// specific I2C addresses may be passed as a parameter here
+// AD0 low = 0x68 (default for InvenSense evaluation board)
+// AD0 high = 0x69
+MPU6050 accelgyro;
+//MPU6050 accelgyro(0x69); // <-- use for AD0 high
+// uncomment "OUTPUT_READABLE_ACCELGYRO" if you want to see a tab-separated
+// list of the accel X/Y/Z and then gyro X/Y/Z values in decimal. Easy to read,
+// not so easy to parse, and slow(er) over UART.
+#define OUTPUT_READABLE_ACCELGYRO
+// uncomment "OUTPUT_BINARY_ACCELGYRO" to send all 6 axes of data as 16-bit
+// binary, one right after the other. This is very fast (as fast as possible
+// without compression or data loss), and easy to parse, but impossible to read
+// for a human.
+//#define OUTPUT_BINARY_ACCELGYRO
+
+
+//-------------CONSTANT VARIABLES--------------//
+
+
+const String camperDataFile = "TEST.csv"; // name must not exceed 8 characters, not including the ".csv"
+//const float P_0 = ?;         // averaged pressure in grassy area at Rainier Vista UW on 06/27/2019 (1 hPa = 100 Pa)
+const float T_0 = (10) + 273; // initial temperature needs to be googled (?°C + 273 to convert to kelvin)
+//const float R   = ?;         // normalized gas constant for earths atmosphere (J/(mol*K) [8.315/(29*10^-3)]
+const float g   = 9.807;         // acceleration due to gravity with 3 significant figures (m/s^2)
+const float H_0 = 63;        //humidity
+int16_t ax, ay, az; // acceleration X, Y, Z
+int16_t gx, gy, gz; // gyro X, Y, Z
+
+
+//---------------------------------------------//
+
+
+//--------------CONSTANT PINS------------------//
+
+
+const int pinCS = 10; // Pin 10 on Arduino Uno
+//---------------------------------------------//
+
+
+// Initialize pressure, temperature, and height-above-sea-level
+float temperature = 0;
+float humidity    = 0;
+float height      = 0;
+File sensorData;
+unsigned long time;
+
+
+const float threshold = 1.2; // Adjust this threshold based on your sensor and walking pattern
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+
+
+  //pinMode(pinCS, OUTPUT); // library takes care of SS
+  // join I2C bus (I2Cdev library doesn't do this automatically)
+    #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+        Wire.begin();
+    #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
+        Fastwire::setup(400, true);
+    #endif
+
+
+    // initialize device
+    Serial.println("Initializing I2C devices...");
+    accelgyro.initialize();
+
+
+    // verify connection
+    Serial.println("Testing device connections...");
+    Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+ 
+  // use the code below to change accel/gyro offset values
+  Serial.print(accelgyro.getXAccelOffset()); Serial.print("\t"); // -76
+  Serial.print(accelgyro.getYAccelOffset()); Serial.print("\t"); // -2359
+  Serial.print(accelgyro.getZAccelOffset()); Serial.print("\t"); // 1688
+ 
+  Serial.print("\n");
+  accelgyro.setXAccelOffset(220);
+  accelgyro.setYAccelOffset(76);
+  accelgyro.setZAccelOffset(560);
+ 
+
+
+
+
+  // SD Card Initialization
+  if (SD.begin()) {
+    Serial.println("?");
+  } else {
+    Serial.println("?");
+    return;
+  }
+
+
+  // Check to see if the file exists:
+  if (SD.exists(camperDataFile)) {
+    // delete the file:
+    SD.remove(camperDataFile);
+  }
+  // If the file doesn't exist:
+  if (SD.exists(camperDataFile)==0) {
+    // Create/Open file // File sensorData;
+    sensorData = SD.open(camperDataFile, FILE_WRITE);
+    //time in miliseconds
+    sensorData.print("Time [ms]:");
+    sensorData.print(",");
+    sensorData.println("Acceleration-z [m/s^2]");
+    sensorData.close(); // close the file
+  }
+
+
+  Serial.println("Reading basic values from BME280");
+  Serial.println();
+  Wire.begin();
+
+
+  if (mySensor.beginI2C() == false) { //Begin communication over I2C
+    Serial.println("The sensor did not respond. Please check wiring.");
+    while(1); //Freeze
+  }
+//-------------DELAY BEFORE STARTING LOOP--------------//
+  // 10 second delay: delay is in ms, meaning every 1000ms = 1s
+  delay(10000);
+}
+
+
+void loop() {
+
+
+  sensorData = SD.open(camperDataFile, FILE_WRITE);
+
+
+  // if the file opened okay, write to it:
+  if (sensorData) {
+    Serial.println("Writing to file...");
+
+
+      //---------------TIME--------------------------
+      Serial.print(" Time: ");
+      time = millis();
+      Serial.println(time);
+
+
+    //--------------Accelerometer------------------
+      // read raw accel/gyro measurements from device
+      //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+      // these methods (and a few others) are also available
+      Serial.print(" Acceleration (z-axis): ");
+      accelgyro.getAcceleration(&ax, &ay, &az);
+      Serial.println(az);
+      //accelgyro.getRotation(&gx, &gy, &gz);
+
+
+      // Calculate total acceleration excluding gravity
+      float accelMagnitude = sqrt(pow(ax, 2) + pow(ay, 2) + pow(az, 2));
+
+
+      // Detect steps based on a threshold
+        if (accelMagnitude > threshold) {
+        stepCount++;
+        Serial.print("Step Count: ");
+        Serial.println(stepCount);
+        delay(200); // Debounce to prevent multiple counts for a single step
+        }
+
+
+      //--------------Raw Humidity-------------------
+      //Serial.print(" Humidity: ");
+      //set the new humidity
+      humidity = mySensor.readHumidity(); // Pressure is unsigned 32 bit int in Q24.8 format (24 int bits & 8 fractional bits). Output of “24674867” represents 24674867/256 = 96386.2 Pa
+      //Serial.println(humidity, 0);
+     
+      //------------Raw Temperature-------------------
+      //Serial.print(" Temperature: ");
+      //set the new temperature
+      temperature = (mySensor.readTempF() - 32) / 1.8; // convert to °C
+      //Serial.println(temperature, 0);
+     
+      //--------------Data String--------------------
+      // Write to file
+    sensorData.print(time);
+    sensorData.print(",");
+    sensorData.print("Temperature: ");
+    sensorData.print(temperature);
+    sensorData.print("Humidity: ");
+    sensorData.print(humidity);
+    sensorData.print("Step Count: ");
+    sensorData.println(stepCount);    
+    sensorData.close(); // close the file
+    //Serial.println("Done.");
+  // if the file didn't open, print an error:
+  } else {
+    Serial.println("error opening text file: test.txt");
+  }
+
+
+  //Serial.println();
+  delay(1000);
+}
+
+
+
+
+
