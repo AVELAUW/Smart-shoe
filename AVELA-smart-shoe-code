@@ -79,9 +79,9 @@ const int pinCS = 10; // Pin 10 on Arduino Uno
 
 
 // Initialize pressure, temperature, and height-above-sea-level
-float temperature = 0;
-float humidity    = 0;
-float height      = 0;
+float temperature = ?;
+float humidity    = ?;
+float height      = ?;
 File sensorData;
 unsigned long time;
 
@@ -180,7 +180,8 @@ void loop() {
 
       //---------------TIME--------------------------
       Serial.print(" Time: ");
-      time = millis();
+      //time in miliseconds
+      time = ?();
       Serial.println(time);
 
 
@@ -202,19 +203,20 @@ void loop() {
         if (accelMagnitude > threshold) {
         stepCount++;
         Serial.print("Step Count: ");
-        Serial.println(stepCount);
+      // print stepCount
+        Serial.println(?);
         delay(200); // Debounce to prevent multiple counts for a single step
         }
 
 
       //--------------Raw Humidity-------------------
-      //Serial.print(" Humidity: ");
+      //Serial.print(" ?: ");
       //set the new humidity
       humidity = mySensor.readHumidity(); // Pressure is unsigned 32 bit int in Q24.8 format (24 int bits & 8 fractional bits). Output of “24674867” represents 24674867/256 = 96386.2 Pa
       //Serial.println(humidity, 0);
      
       //------------Raw Temperature-------------------
-      //Serial.print(" Temperature: ");
+      //Serial.print(" ?: ");
       //set the new temperature
       temperature = (mySensor.readTempF() - 32) / 1.8; // convert to °C
       //Serial.println(temperature, 0);
